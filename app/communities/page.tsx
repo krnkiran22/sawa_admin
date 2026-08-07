@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { CommunityItem } from "../lib/types";
 import { UpdateCommunityInput } from "../providers/AdminDataProvider";
+import { ImageCropModal } from "../components/ImageCropModal";
 
 export default function CommunitiesPage() {
   const { communities, couples, deleteCommunity, addCommunity, updateCommunity, processJoinRequest } = useAdminData();
@@ -27,6 +28,9 @@ export default function CommunitiesPage() {
   });
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const editFileInputRef = useRef<HTMLInputElement>(null);
+  // Holds the just-selected image while the admin crops it. `target` decides
+  // whether the cropped result lands on the create or the edit form.
+  const [cropState, setCropState] = useState<{ src: string; target: 'create' | 'edit' } | null>(null);
   
   const [newComm, setNewComm] = useState<{
     name: string;
@@ -86,8 +90,10 @@ export default function CommunitiesPage() {
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) { alert("Image size should be less than 5MB"); return; }
     const reader = new FileReader();
-    reader.onloadend = () => setEditComm(prev => ({ ...prev, coverImageUrl: reader.result as string }));
+    reader.onloadend = () => setCropState({ src: reader.result as string, target: 'edit' });
     reader.readAsDataURL(file);
+    // Reset so selecting the same file again re-triggers onChange.
+    e.target.value = "";
   };
 
   const handleSaveEdit = async () => {
@@ -143,10 +149,21 @@ export default function CommunitiesPage() {
       }
       const reader = new FileReader();
       reader.onloadend = () => {
-        setNewComm({ ...newComm, coverImageUrl: reader.result as string });
+        setCropState({ src: reader.result as string, target: 'create' });
       };
       reader.readAsDataURL(file);
+      // Reset so selecting the same file again re-triggers onChange.
+      e.target.value = "";
     }
+  };
+
+  const handleCropped = (dataUrl: string) => {
+    if (cropState?.target === 'edit') {
+      setEditComm(prev => ({ ...prev, coverImageUrl: dataUrl }));
+    } else {
+      setNewComm(prev => ({ ...prev, coverImageUrl: dataUrl }));
+    }
+    setCropState(null);
   };
 
   const triggerUpload = () => {
@@ -607,6 +624,15 @@ export default function CommunitiesPage() {
         onCancel={() => setDeleteId(null)}
         isLoading={isDeleting}
       />
+
+      {cropState && (
+        <ImageCropModal
+          src={cropState.src}
+          aspect={16 / 9}
+          onCancel={() => setCropState(null)}
+          onCropped={handleCropped}
+        />
+      )}
 
       <style jsx>{`
         .detailModal {
