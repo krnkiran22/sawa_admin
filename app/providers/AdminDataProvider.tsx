@@ -33,6 +33,23 @@ export interface UpdateCommunityInput {
   coverImageUrl?: string;
 }
 
+// Shape of the `/admin/data` response payload. Every field is optional so the
+// UI can defend against a partial/garbled response without falling back to any.
+interface AdminDataPayload {
+  stats?: Partial<DashboardStats>;
+  users?: UserItem[];
+  couples?: CoupleItem[];
+  communities?: CommunityItem[];
+  activities?: ActivityItem[];
+  prompts?: PromptItem[];
+  reports?: ReportItem[];
+  blocks?: BlockItem[];
+  chartData?: ChartDataPoint[];
+  userLogs?: ActivityLog[];
+  communityLogs?: ActivityLog[];
+  cityDistribution?: CityStat[];
+}
+
 interface AdminContextType {
   stats: DashboardStats;
   users: UserItem[];
@@ -102,9 +119,42 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api/v1/admin";
   const toast = useToast();
 
-  // Clear auth state and wipe stored token — called on any session failure.
+  // Assign server data into state with defensive guards. A partial/garbled
+  // payload (e.g. missing `stats` or a non-array `users`) must never blow up the
+  // downstream `.map()`/`[0]` in the pages, so every field falls back to a safe
+  // empty default.
+  const applyData = useCallback((data: AdminDataPayload) => {
+    setStats(
+      data?.stats && typeof data.stats === "object"
+        ? {
+            totalUsers: data.stats.totalUsers ?? 0,
+            totalCouples: data.stats.totalCouples ?? 0,
+            totalCommunities: data.stats.totalCommunities ?? 0,
+            totalPrompts: data.stats.totalPrompts ?? 0,
+            activeToday: data.stats.activeToday ?? 0,
+          }
+        : { totalUsers: 0, totalCouples: 0, totalCommunities: 0, totalPrompts: 0, activeToday: 0 },
+    );
+    setUsers(Array.isArray(data?.users) ? data.users : []);
+    setCouples(Array.isArray(data?.couples) ? data.couples : []);
+    setCommunities(Array.isArray(data?.communities) ? data.communities : []);
+    setActivities(Array.isArray(data?.activities) ? data.activities : []);
+    setPrompts(Array.isArray(data?.prompts) ? data.prompts : []);
+    setReports(Array.isArray(data?.reports) ? data.reports : []);
+    setBlocks(Array.isArray(data?.blocks) ? data.blocks : []);
+    setChartData(Array.isArray(data?.chartData) ? data.chartData : []);
+    setUserLogs(Array.isArray(data?.userLogs) ? data.userLogs : []);
+    setCommunityLogs(Array.isArray(data?.communityLogs) ? data.communityLogs : []);
+    setCityDistribution(Array.isArray(data?.cityDistribution) ? data.cityDistribution : []);
+  }, []);
+
+  // Clear auth state, wipe stored token AND the mirrored cookie the Next
+  // middleware reads. Called only on a real auth failure (401/403) or explicit
+  // logout — NOT on transient 5xx/network errors (see fetchAllData).
   const forceLogout = useCallback(() => {
     localStorage.removeItem("admin_token");
+    // Expire the middleware cookie immediately.
+    document.cookie = "admin_token=; path=/; max-age=0; SameSite=Lax";
     setToken(null);
     setIsAuthenticated(false);
   }, []);
@@ -116,44 +166,47 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
         headers: { Authorization: `Bearer ${authToken}` },
       });
 
-      // Any non-ok status — treat as session failure and force re-login
-      if (!res.ok) {
+      // Only a genuine auth failure should end the session.
+      if (res.status === 401 || res.status === 403) {
         forceLogout();
         return;
       }
 
-      const json = await res.json();
-      if (json.success) {
-        // Only mark authenticated after the server confirms the token is valid
+      // 5xx / other non-ok: the token may be perfectly valid — keep the admin
+      // signed in and surface the error instead of bouncing them to /login.
+      if (!res.ok) {
         setIsAuthenticated(true);
-        setStats(json.data.stats);
-        setUsers(json.data.users);
-        setCouples(json.data.couples);
-        setCommunities(json.data.communities);
-        setActivities(json.data.activities);
-        setPrompts(json.data.prompts);
-        setReports(json.data.reports || []);
-        setBlocks(json.data.blocks || []);
-        setChartData(json.data.chartData || []);
-        setUserLogs(json.data.userLogs || []);
-        setCommunityLogs(json.data.communityLogs || []);
-        setCityDistribution(json.data.cityDistribution || []);
+        toast("Couldn't load dashboard data (server error). Try refreshing.", "error");
+        return;
+      }
+
+      const json = await res.json();
+      if (json?.success && json.data) {
+        setIsAuthenticated(true);
+        applyData(json.data);
       } else {
-        forceLogout();
+        // Auth was fine but the shape is off — don't destroy the session.
+        setIsAuthenticated(true);
+        toast("Received an unexpected response from the server.", "error");
       }
     } catch (err) {
-      // Network error — clear session to avoid empty dashboard
+      // Network blip — keep the session so a dropped connection doesn't log the
+      // admin out; the page's Refresh action can retry.
       console.error("Failed to fetch admin data:", err);
-      forceLogout();
+      setIsAuthenticated(true);
+      toast("Network error loading data. Check your connection and refresh.", "error");
     } finally {
       setIsLoading(false);
     }
-  }, [API_URL, forceLogout]);
+  }, [API_URL, forceLogout, applyData, toast]);
 
   useEffect(() => {
     const savedToken = localStorage.getItem("admin_token");
     if (savedToken) {
-      // Don't set isAuthenticated=true yet — wait for the server to validate.
+      // Keep the middleware cookie in sync with the stored token, then validate
+      // with the server before rendering protected content.
+      const secure = window.location.protocol === "https:" ? "; Secure" : "";
+      document.cookie = `admin_token=${savedToken}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Lax${secure}`;
       setToken(savedToken);
       fetchAllData(savedToken);
     } else {
@@ -169,12 +222,16 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ email, password: pass }),
       });
       const json = await res.json();
-      if (json.success) {
+      if (json?.success && json.data?.token) {
         const authToken = json.data.token;
         localStorage.setItem("admin_token", authToken);
+        // Mirror the token into a cookie so the Next middleware can gate routes.
+        const secure = window.location.protocol === "https:" ? "; Secure" : "";
+        document.cookie = `admin_token=${authToken}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Lax${secure}`;
         setToken(authToken);
-        setIsAuthenticated(true);
-        fetchAllData(authToken);
+        // Validate + load BEFORE reporting success so the caller doesn't navigate
+        // to the dashboard only to be bounced by a failing initial fetch.
+        await fetchAllData(authToken);
         return true;
       }
       return false;
@@ -303,9 +360,16 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
   const deleteUser = async (id: string) => {
     if (!token) return;
     const removedUser = users.find((u) => u.id === id);
-    setUsers((prev) => prev.filter((u) => u.id !== id));
     if (removedUser?.coupleId) {
-      setCouples((prev) => prev.filter((c) => c.id !== removedUser.coupleId));
+      // The server deletes a paired user by wiping the WHOLE couple + BOTH
+      // partners (admin.controller.deleteUser → deleteCouple), so mirror that
+      // locally: drop the couple AND every user pointing at it. Otherwise the
+      // partner row lingers referencing a now-deleted couple.
+      const goneCoupleId = removedUser.coupleId;
+      setUsers((prev) => prev.filter((u) => u.id !== id && u.coupleId !== goneCoupleId));
+      setCouples((prev) => prev.filter((c) => c.id !== goneCoupleId));
+    } else {
+      setUsers((prev) => prev.filter((u) => u.id !== id));
     }
     try {
       const res = await fetch(`${API_URL}/users/${id}`, {
@@ -516,22 +580,11 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
       });
       if (!res.ok) return;
       const json = await res.json();
-      if (json.success) {
-        setStats(json.data.stats);
-        setUsers(json.data.users);
-        setCouples(json.data.couples);
-        setCommunities(json.data.communities);
-        setActivities(json.data.activities);
-        setPrompts(json.data.prompts);
-        setReports(json.data.reports || []);
-        setBlocks(json.data.blocks || []);
-        setChartData(json.data.chartData || []);
-        setUserLogs(json.data.userLogs || []);
-        setCommunityLogs(json.data.communityLogs || []);
-        setCityDistribution(json.data.cityDistribution || []);
+      if (json?.success && json.data) {
+        applyData(json.data);
       }
     } catch { /* silent */ }
-  }, [API_URL]);
+  }, [API_URL, applyData]);
 
   const refresh = useCallback(async () => {
     if (!token) return;

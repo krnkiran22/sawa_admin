@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { AdminShell } from "../components/AdminShell";
+import { ConfirmModal } from "../components/ConfirmModal";
 import { useAdminData } from "../providers/AdminDataProvider";
 import { statusClass } from "../lib/format";
 
@@ -10,6 +11,9 @@ export default function BlocksPage() {
   const [filter, setFilter] = useState<"all" | "user" | "community">("all");
   const [search, setSearch] = useState("");
   const [unblocking, setUnblocking] = useState<string | null>(null);
+  const [unblockTarget, setUnblockTarget] = useState<
+    { blockerCoupleId: string; targetId: string; id: string } | null
+  >(null);
 
   const filtered = blocks
     .filter((b) => filter === "all" || b.targetType === filter)
@@ -23,13 +27,15 @@ export default function BlocksPage() {
   const userBlockCount = blocks.filter((b) => b.targetType === "user").length;
   const communityBlockCount = blocks.filter((b) => b.targetType === "community").length;
 
-  const handleUnblock = async (blockerCoupleId: string, targetId: string, id: string) => {
-    if (!confirm("Remove this block? The blocker will be able to see and interact with the target again.")) return;
+  const confirmUnblock = async () => {
+    if (!unblockTarget) return;
+    const { blockerCoupleId, targetId, id } = unblockTarget;
     setUnblocking(id);
     try {
       await adminUnblock(blockerCoupleId, targetId);
     } finally {
       setUnblocking(null);
+      setUnblockTarget(null);
     }
   };
 
@@ -154,7 +160,7 @@ export default function BlocksPage() {
                   <td>
                     <button
                       disabled={unblocking === block.id}
-                      onClick={() => handleUnblock(block.blockerCoupleId, block.targetId, block.id)}
+                      onClick={() => setUnblockTarget({ blockerCoupleId: block.blockerCoupleId, targetId: block.targetId, id: block.id })}
                       style={{
                         padding: "0.3rem 0.75rem",
                         borderRadius: "6px",
@@ -175,6 +181,17 @@ export default function BlocksPage() {
           </tbody>
         </table>
       </section>
+
+      <ConfirmModal
+        isOpen={!!unblockTarget}
+        title="Remove block"
+        message="Remove this block? The blocker will be able to see and interact with the target again."
+        confirmLabel={unblocking ? "Removing…" : "Remove block"}
+        tone="primary"
+        onConfirm={confirmUnblock}
+        onCancel={() => setUnblockTarget(null)}
+        isLoading={!!unblocking}
+      />
     </AdminShell>
   );
 }

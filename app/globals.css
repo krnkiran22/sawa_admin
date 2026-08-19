@@ -4,11 +4,19 @@
   --ink-1: #111111;
   --ink-2: #2A2A2A;
   --ink-muted: #666666;
+  /* Aliases used across pages/components — previously undefined, which made any
+     element relying on them (text/background) fall back to transparent/black.
+     --ink   → primary heading ink, --ink-body → body copy ink. */
+  --ink: #111111;
+  --ink-body: #2A2A2A;
   --panel: #FFF8E2;
   --panel-soft: #FFFFFF;
   --bg-app: #FFFBEF;
   --stroke: #E8E8E8;
   --border: #E8E8E8;
+  /* Card/elevated surface on the light theme. Used for active tabs, tokens and
+     icon buttons; without it those backgrounds rendered transparent. */
+  --surface: #FFFFFF;
   --surface-2: #F8F8FB;
   --accent: #1E5559;
   --accent-warm: #D09B64;

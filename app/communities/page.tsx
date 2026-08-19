@@ -3,6 +3,7 @@
 import { useMemo, useState, useRef } from "react";
 import { AdminShell } from "../components/AdminShell";
 import { ConfirmModal } from "../components/ConfirmModal";
+import { useToast } from "../components/Toast";
 import { useAdminData } from "../providers/AdminDataProvider";
 import { 
   Plus, X, Users, Shield, MapPin, Hash, 
@@ -14,6 +15,7 @@ import { ImageCropModal } from "../components/ImageCropModal";
 
 export default function CommunitiesPage() {
   const { communities, couples, deleteCommunity, addCommunity, updateCommunity, processJoinRequest } = useAdminData();
+  const toast = useToast();
   const [minMembers, setMinMembers] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -88,7 +90,7 @@ export default function CommunitiesPage() {
   const handleEditFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { alert("Image size should be less than 5MB"); return; }
+    if (file.size > 5 * 1024 * 1024) { toast("Image size should be less than 5MB", "error"); return; }
     const reader = new FileReader();
     reader.onloadend = () => setCropState({ src: reader.result as string, target: 'edit' });
     reader.readAsDataURL(file);
@@ -144,7 +146,7 @@ export default function CommunitiesPage() {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 5 * 1024 * 1024) {
-        alert("Image size should be less than 5MB");
+        toast("Image size should be less than 5MB", "error");
         return;
       }
       const reader = new FileReader();

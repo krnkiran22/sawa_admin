@@ -2,17 +2,23 @@
 
 import { useState } from "react";
 import { AdminShell } from "../components/AdminShell";
+import { ConfirmModal } from "../components/ConfirmModal";
+import { useToast } from "../components/Toast";
 import { useAdminData } from "../providers/AdminDataProvider";
 import styles from "./page.module.css";
 
 export default function NotificationsPage() {
   const { couples, sendNotification } = useAdminData();
+  const toast = useToast();
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
   const [targetType, setTargetType] = useState<"all" | "specific">("all");
   const [selectedRecipientIds, setSelectedRecipientIds] = useState<string[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [success, setSuccess] = useState(false);
+  // Broadcasts are irreversible, so gate the actual send behind a confirmation
+  // that spells out exactly how many couples will receive the push.
+  const [showConfirm, setShowConfirm] = useState(false);
 
   const allSelected = couples.length > 0 && selectedRecipientIds.length === couples.length;
   const someSelected = selectedRecipientIds.length > 0 && !allSelected;
@@ -27,13 +33,24 @@ export default function NotificationsPage() {
     );
   };
 
-  const handleSend = async (e: React.FormEvent) => {
+  const recipientCount = targetType === "all" ? couples.length : selectedRecipientIds.length;
+
+  // Validate, then open the confirmation modal instead of sending immediately.
+  const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !message) return;
+    if (!title.trim() || !message.trim()) return;
     if (targetType === "specific" && selectedRecipientIds.length === 0) {
-      alert("Please select at least one recipient.");
+      toast("Please select at least one recipient.", "error");
       return;
     }
+    if (recipientCount === 0) {
+      toast("There are no recipients to notify.", "error");
+      return;
+    }
+    setShowConfirm(true);
+  };
+
+  const doSend = async () => {
     setIsSending(true);
     setSuccess(false);
     try {
@@ -42,11 +59,13 @@ export default function NotificationsPage() {
       setTitle("");
       setMessage("");
       setSelectedRecipientIds([]);
+      toast(`Notification sent to ${recipientCount} couple${recipientCount === 1 ? "" : "s"}.`, "success");
       setTimeout(() => setSuccess(false), 3000);
     } catch {
-      alert("Failed to send notification.");
+      toast("Failed to send notification.", "error");
     } finally {
       setIsSending(false);
+      setShowConfirm(false);
     }
   };
 
@@ -187,6 +206,21 @@ export default function NotificationsPage() {
           </div>
         )}
       </form>
+
+      <ConfirmModal
+        isOpen={showConfirm}
+        title={targetType === "all" ? "Broadcast to ALL couples?" : "Send notification?"}
+        message={
+          targetType === "all"
+            ? `This will immediately push "${title}" to every couple on the platform (${recipientCount} couple${recipientCount === 1 ? "" : "s"}). This cannot be undone.`
+            : `Send "${title}" to ${recipientCount} selected couple${recipientCount === 1 ? "" : "s"}?`
+        }
+        confirmLabel={isSending ? "Sending…" : `Send to ${recipientCount}`}
+        tone="primary"
+        onConfirm={doSend}
+        onCancel={() => setShowConfirm(false)}
+        isLoading={isSending}
+      />
     </AdminShell>
   );
 }

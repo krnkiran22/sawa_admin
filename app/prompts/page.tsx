@@ -75,18 +75,29 @@ export default function PromptsPage() {
 
   const filtered = prompts.filter((p) => (p.category || "chat_shortcut") === activeTab);
 
+  // Reordering happens within one category tab, but sortOrder is a single global
+  // sequence on the server. Sending only the current category's ids made the
+  // server reassign 0..N for those rows, colliding with the other category's
+  // sortOrder values and scrambling cross-category order on the next fetch.
+  // Instead we swap the two adjacent items *inside the full global id list* and
+  // send that, so sortOrder stays globally unique and stable.
+  const swapGlobal = (aId: string, bId: string) => {
+    const globalIds = prompts.map((p) => p.id);
+    const ia = globalIds.indexOf(aId);
+    const ib = globalIds.indexOf(bId);
+    if (ia === -1 || ib === -1) return;
+    [globalIds[ia], globalIds[ib]] = [globalIds[ib], globalIds[ia]];
+    reorderPrompts(globalIds);
+  };
+
   const moveUp = (index: number) => {
     if (index === 0) return;
-    const ids = filtered.map((p) => p.id);
-    [ids[index - 1], ids[index]] = [ids[index], ids[index - 1]];
-    reorderPrompts(ids);
+    swapGlobal(filtered[index].id, filtered[index - 1].id);
   };
 
   const moveDown = (index: number) => {
     if (index === filtered.length - 1) return;
-    const ids = filtered.map((p) => p.id);
-    [ids[index], ids[index + 1]] = [ids[index + 1], ids[index]];
-    reorderPrompts(ids);
+    swapGlobal(filtered[index].id, filtered[index + 1].id);
   };
 
   return (

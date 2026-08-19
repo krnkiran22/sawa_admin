@@ -8,7 +8,7 @@ import { formatDate } from "../lib/format";
 import { UserItem, CoupleItem } from "../lib/types";
 import {
   X, Phone, MapPin, Calendar, Quote, Heart, Target,
-  CreditCard, Zap, Users, User, Trash2, Ban, ShieldCheck, Heart as HeartIcon
+  Zap, Users, User, Trash2, Ban, ShieldCheck, Heart as HeartIcon
 } from "lucide-react";
 
 type StatusFilter = "all" | "active" | "inactive" | "flagged" | "banned";
@@ -27,6 +27,9 @@ export default function UsersPage() {
   const [banTarget, setBanTarget] = useState<{ id: string; name: string } | null>(null);
   const [banReason, setBanReason] = useState("");
   const [isBanProcessing, setIsBanProcessing] = useState(false);
+  // Unban confirmation (replaces the native confirm() dialog).
+  const [unbanId, setUnbanId] = useState<string | null>(null);
+  const [isUnbanProcessing, setIsUnbanProcessing] = useState(false);
 
   const filteredData = useMemo(() => {
     if (viewMode === "couples") {
@@ -75,10 +78,17 @@ export default function UsersPage() {
     setBanTarget(null);
   };
 
-  const handleUnban = async (e: React.MouseEvent, id: string) => {
+  const handleUnban = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (!confirm('Restore this couple\u2019s access?')) return;
-    await unbanCouple(id);
+    setUnbanId(id);
+  };
+
+  const confirmUnban = async () => {
+    if (!unbanId) return;
+    setIsUnbanProcessing(true);
+    await unbanCouple(unbanId);
+    setIsUnbanProcessing(false);
+    setUnbanId(null);
   };
 
   // Surface readable status labels with consistent visual treatment.
@@ -333,6 +343,17 @@ export default function UsersPage() {
         isLoading={isDeleting}
       />
 
+      <ConfirmModal
+        isOpen={!!unbanId}
+        title="Restore access"
+        message="Restore this couple’s access? Both partners will be able to log in and use the app again."
+        confirmLabel={isUnbanProcessing ? "Restoring…" : "Restore access"}
+        tone="primary"
+        onConfirm={confirmUnban}
+        onCancel={() => setUnbanId(null)}
+        isLoading={isUnbanProcessing}
+      />
+
       {banTarget && (
         <div className="modalOverlay" onClick={() => !isBanProcessing && setBanTarget(null)}>
           <div className="modalContent" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
@@ -439,20 +460,6 @@ export default function UsersPage() {
                       <p className="bioText">{selectedUser.profile.bio}</p>
                    </div>
                  )}
-
-                 <div className="profileSection">
-                    <div className="sectionLabel"><CreditCard size={14} /> Subscription</div>
-                    <div className="profileGrid">
-                       <div className="profileCard">
-                          <div className="cardLabel"><Zap size={14} /> Tier</div>
-                          <span className="token" style={{ borderColor: 'var(--accent-good)', color: 'var(--accent-good)' }}>Premium Gold</span>
-                       </div>
-                       <div className="profileCard">
-                          <div className="cardLabel"><Calendar size={14} /> Renewal</div>
-                          <span className="token">April 24, 2026</span>
-                       </div>
-                    </div>
-                 </div>
 
                  <div className="profileGrid">
                     {selectedUser.profile?.answers?.map((ans, idx) => (

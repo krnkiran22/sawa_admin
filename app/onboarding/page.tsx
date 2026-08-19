@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { AdminShell } from "../components/AdminShell";
-import { Plus, Trash2, Edit2, Check, X } from "lucide-react";
+import { Plus, Trash2, Edit2, Check, X, AlertTriangle } from "lucide-react";
 
 interface QuestionMock {
   id: string;
@@ -91,6 +91,14 @@ export default function OnboardingMockPage() {
       title="Onboarding Flow Mock"
       subtitle="Preview and design the onboarding journey without affecting live data."
     >
+      <div className="alert-banner" role="note">
+        <AlertTriangle size={18} />
+        <span>
+          <strong>Preview only.</strong> Changes here are not saved and do not affect the live app.
+          This screen is a design mock for planning the onboarding flow.
+        </span>
+      </div>
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
          <div className="tabRow">
             <button 
