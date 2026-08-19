@@ -23,6 +23,7 @@
   --accent-cool: #1E5559;
   --accent-good: #43A3B2;
   --accent-orange: #F37321;
+  --accent-warn: #d97706; /* matches the inline fallbacks that rendered until this token existed */
 }
 
 * {
