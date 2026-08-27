@@ -8,15 +8,21 @@ import { formatDate } from "../lib/format";
 import { UserItem, CoupleItem } from "../lib/types";
 import {
   X, Phone, MapPin, Calendar, Quote, Heart, Target,
-  Zap, Users, User, Trash2, Ban, ShieldCheck, Heart as HeartIcon
+  Zap, Users, User, Trash2, Ban, ShieldCheck, Heart as HeartIcon,
+  BadgeCheck, MailQuestion, XCircle, AlertTriangle
 } from "lucide-react";
 
 type StatusFilter = "all" | "active" | "inactive" | "flagged" | "banned";
+type VerifFilter = "all" | "pending" | "verified" | "rejected";
 
 export default function UsersPage() {
-  const { users, couples, deleteUser, deleteCouple, banCouple, unbanCouple } = useAdminData();
+  const {
+    users, couples, deleteUser, deleteCouple, banCouple, unbanCouple,
+    approveCouple, requestCoupleChanges, rejectCouple,
+  } = useAdminData();
   const [viewMode, setViewMode] = useState<"couples" | "singles">("couples");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [verifFilter, setVerifFilter] = useState<VerifFilter>("all");
   const [query, setQuery] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -30,12 +36,30 @@ export default function UsersPage() {
   // Unban confirmation (replaces the native confirm() dialog).
   const [unbanId, setUnbanId] = useState<string | null>(null);
   const [isUnbanProcessing, setIsUnbanProcessing] = useState(false);
+  // Verification pipeline modals.
+  const [approveTarget, setApproveTarget] = useState<{ id: string; name: string } | null>(null);
+  const [isApproveProcessing, setIsApproveProcessing] = useState(false);
+  const [noteTarget, setNoteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [noteText, setNoteText] = useState("");
+  const [isNoteProcessing, setIsNoteProcessing] = useState(false);
+  const [rejectTarget, setRejectTarget] = useState<{ id: string; name: string } | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectStep, setRejectStep] = useState<"input" | "confirm">("input");
+  const [isRejectProcessing, setIsRejectProcessing] = useState(false);
+
+  const pendingCount = useMemo(
+    () => couples.filter((c) => (c.verificationStatus ?? "verified") === "pending").length,
+    [couples]
+  );
 
   const filteredData = useMemo(() => {
     if (viewMode === "couples") {
       return couples.filter((c) => {
+        // Couples predating the feature have no status — treat as verified.
+        const verif = c.verificationStatus ?? "verified";
+        const matchesVerif = verifFilter === "all" || verif === verifFilter;
         const text = `${c.pairName} ${c.city}`.toLowerCase();
-        return text.includes(query.toLowerCase());
+        return matchesVerif && text.includes(query.toLowerCase());
       });
     } else {
       return users.filter((u) => {
@@ -44,7 +68,7 @@ export default function UsersPage() {
         return matchesStatus && text.includes(query.toLowerCase());
       });
     }
-  }, [viewMode, users, couples, statusFilter, query]);
+  }, [viewMode, users, couples, statusFilter, verifFilter, query]);
 
   const openDeleteModal = (e: React.MouseEvent, id: string, name: string) => {
     e.stopPropagation();
@@ -89,6 +113,64 @@ export default function UsersPage() {
     await unbanCouple(unbanId);
     setIsUnbanProcessing(false);
     setUnbanId(null);
+  };
+
+  // ─── Verification pipeline handlers ────────────────────────────────────────
+  const openApproveModal = (e: React.MouseEvent, id: string, name: string) => {
+    e.stopPropagation();
+    setApproveTarget({ id, name });
+  };
+
+  const confirmApprove = async () => {
+    if (!approveTarget) return;
+    setIsApproveProcessing(true);
+    await approveCouple(approveTarget.id);
+    setIsApproveProcessing(false);
+    setApproveTarget(null);
+  };
+
+  const openNoteModal = (e: React.MouseEvent, id: string, name: string) => {
+    e.stopPropagation();
+    setNoteTarget({ id, name });
+    setNoteText("");
+  };
+
+  const submitNote = async () => {
+    if (!noteTarget || !noteText.trim()) return;
+    setIsNoteProcessing(true);
+    await requestCoupleChanges(noteTarget.id, noteText.trim());
+    setIsNoteProcessing(false);
+    setNoteTarget(null);
+  };
+
+  const openRejectModal = (e: React.MouseEvent, id: string, name: string) => {
+    e.stopPropagation();
+    setRejectTarget({ id, name });
+    setRejectReason("");
+    setRejectStep("input");
+  };
+
+  const confirmReject = async () => {
+    if (!rejectTarget || !rejectReason.trim()) return;
+    setIsRejectProcessing(true);
+    await rejectCouple(rejectTarget.id, rejectReason.trim());
+    setIsRejectProcessing(false);
+    setRejectTarget(null);
+  };
+
+  // Verification chip for the couples table.
+  const verifChip = (c: CoupleItem) => {
+    const verif = c.verificationStatus ?? "verified";
+    switch (verif) {
+      case "verified":
+        return <span className="chip chipSuccess" title={c.verifiedAt ? `Verified ${formatDate(c.verifiedAt)}` : "Verified"}><BadgeCheck size={12} /> Verified</span>;
+      case "pending":
+        return <span className="chip chipWarning" title="New couple awaiting admin approval"><AlertTriangle size={12} /> Pending</span>;
+      case "rejected":
+        return <span className="chip chipDanger" title={`Rejected${c.rejectionReason ? ` — ${c.rejectionReason}` : ""}. Account deletes when the user opens the app and acknowledges the note.`}><XCircle size={12} /> Rejected · awaiting user</span>;
+      default:
+        return <span className="chip">{verif}</span>;
+    }
   };
 
   // Surface readable status labels with consistent visual treatment.
@@ -152,6 +234,20 @@ export default function UsersPage() {
                 <option value="banned">Banned</option>
               </select>
             )}
+            {viewMode === 'couples' && (
+              <select
+                className="control"
+                value={verifFilter}
+                onChange={(e) => setVerifFilter(e.target.value as VerifFilter)}
+                style={{ maxWidth: '210px' }}
+                title="Filter by verification state"
+              >
+                <option value="all">All Verification</option>
+                <option value="pending">{`Pending approval${pendingCount ? ` (${pendingCount})` : ''}`}</option>
+                <option value="verified">Verified</option>
+                <option value="rejected">Rejected</option>
+              </select>
+            )}
           </div>
         </div>
       </div>
@@ -170,6 +266,7 @@ export default function UsersPage() {
                 <th>Relationship</th>
                 <th>Compatibility</th>
                 <th>Status</th>
+                <th>Verification</th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
             ) : (
@@ -245,7 +342,46 @@ export default function UsersPage() {
                     </div>
                   </td>
                   <td>{statusChip(couple.status)}</td>
+                  <td>{verifChip(couple)}</td>
                   <td style={{ textAlign: 'right' }}>
+                    {(couple.verificationStatus ?? 'verified') === 'pending' && (
+                      <>
+                        <button
+                          onClick={(e) => openApproveModal(e, couple.id, couple.pairName)}
+                          className="actionBtn"
+                          style={{ color: 'var(--accent-good)' }}
+                          title="Approve — mark this couple as Verified"
+                        >
+                          <BadgeCheck size={18} />
+                        </button>
+                        <button
+                          onClick={(e) => openNoteModal(e, couple.id, couple.pairName)}
+                          className="actionBtn"
+                          style={{ color: 'var(--accent-cool, #6366f1)' }}
+                          title="Request changes — send a note, keep them pending"
+                        >
+                          <MailQuestion size={18} />
+                        </button>
+                        <button
+                          onClick={(e) => openRejectModal(e, couple.id, couple.pairName)}
+                          className="actionBtn"
+                          style={{ color: 'var(--accent-danger, #dc2626)' }}
+                          title="Reject — lock the account; deleted once the user acknowledges your note"
+                        >
+                          <XCircle size={18} />
+                        </button>
+                      </>
+                    )}
+                    {couple.verificationStatus === 'rejected' && (
+                      <button
+                        onClick={(e) => openApproveModal(e, couple.id, couple.pairName)}
+                        className="actionBtn"
+                        style={{ color: 'var(--accent-good)' }}
+                        title="Undo rejection — approve this couple instead (only works until they acknowledge)"
+                      >
+                        <BadgeCheck size={18} />
+                      </button>
+                    )}
                     {couple.status === 'banned' ? (
                       <button
                         onClick={(e) => handleUnban(e, couple.id)}
@@ -353,6 +489,164 @@ export default function UsersPage() {
         onCancel={() => setUnbanId(null)}
         isLoading={isUnbanProcessing}
       />
+
+      <ConfirmModal
+        isOpen={!!approveTarget}
+        title="Approve couple"
+        message={`Approve "${approveTarget?.name}" as a Verified couple? Their profile badge changes to "Verified couple" and they'll receive a congratulatory notification.`}
+        confirmLabel={isApproveProcessing ? "Approving…" : "Approve"}
+        tone="primary"
+        onConfirm={confirmApprove}
+        onCancel={() => setApproveTarget(null)}
+        isLoading={isApproveProcessing}
+      />
+
+      {noteTarget && (
+        <div className="modalOverlay" onClick={() => !isNoteProcessing && setNoteTarget(null)}>
+          <div className="modalContent" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
+            <button className="modalClose" onClick={() => !isNoteProcessing && setNoteTarget(null)} disabled={isNoteProcessing}>
+              <X size={24} />
+            </button>
+            <div style={{ padding: '2rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <MailQuestion size={22} style={{ color: 'var(--accent-cool, #6366f1)' }} />
+                <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Request changes</h2>
+              </div>
+              <p style={{ marginTop: 0, color: 'var(--ink-muted)' }}>
+                Send <strong>{noteTarget.name}</strong> a note about what to fix (e.g. a clearer couple
+                photo). It lands in their notification bar; the profile stays <em>Pending</em> until you approve it.
+              </p>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: 6 }}>
+                Note to the couple (required)
+              </label>
+              <textarea
+                className="control"
+                value={noteText}
+                onChange={(e) => setNoteText(e.target.value)}
+                placeholder="e.g. Please upload a photo where both partners are clearly visible."
+                rows={3}
+                style={{ width: '100%', resize: 'vertical' }}
+                disabled={isNoteProcessing}
+              />
+              <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+                <button className="control" onClick={() => setNoteTarget(null)} disabled={isNoteProcessing}>
+                  Cancel
+                </button>
+                <button
+                  className="control"
+                  onClick={submitNote}
+                  disabled={isNoteProcessing || !noteText.trim()}
+                  style={{
+                    background: 'var(--accent-cool, #6366f1)',
+                    color: 'white',
+                    borderColor: 'var(--accent-cool, #6366f1)',
+                    opacity: !noteText.trim() ? 0.6 : 1,
+                  }}
+                >
+                  {isNoteProcessing ? 'Sending…' : 'Send note'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {rejectTarget && (
+        <div className="modalOverlay" onClick={() => !isRejectProcessing && setRejectTarget(null)}>
+          <div className="modalContent" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 500 }}>
+            <button className="modalClose" onClick={() => !isRejectProcessing && setRejectTarget(null)} disabled={isRejectProcessing}>
+              <X size={24} />
+            </button>
+            <div style={{ padding: '2rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <XCircle size={22} style={{ color: 'var(--accent-danger, #dc2626)' }} />
+                <h2 style={{ margin: 0, fontSize: '1.25rem' }}>
+                  {rejectStep === 'input' ? 'Reject couple' : 'Confirm rejection'}
+                </h2>
+              </div>
+
+              {rejectStep === 'input' ? (
+                <>
+                  <p style={{ marginTop: 0, color: 'var(--ink-muted)' }}>
+                    Write the note <strong>{rejectTarget.name}</strong> will see when they next open the
+                    app. After they read it and tap Continue, their account and both phone numbers are
+                    <strong> permanently deleted</strong> (they can register again from scratch).
+                  </p>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: 6 }}>
+                    Rejection note shown to the user (required)
+                  </label>
+                  <textarea
+                    className="control"
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    placeholder="e.g. Your profile doesn't meet our couple verification guidelines."
+                    rows={3}
+                    style={{ width: '100%', resize: 'vertical' }}
+                    disabled={isRejectProcessing}
+                  />
+                  <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+                    <button className="control" onClick={() => setRejectTarget(null)} disabled={isRejectProcessing}>
+                      Cancel
+                    </button>
+                    <button
+                      className="control"
+                      onClick={() => rejectReason.trim() && setRejectStep('confirm')}
+                      disabled={!rejectReason.trim()}
+                      style={{
+                        background: 'var(--accent-danger, #dc2626)',
+                        color: 'white',
+                        borderColor: 'var(--accent-danger, #dc2626)',
+                        opacity: !rejectReason.trim() ? 0.6 : 1,
+                      }}
+                    >
+                      Reject couple
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p style={{ marginTop: 0, color: 'var(--ink-muted)' }}>
+                    If you reject this account, the user will be notified with this note:
+                  </p>
+                  <blockquote style={{
+                    margin: '0 0 12px',
+                    padding: '10px 14px',
+                    background: 'var(--surface-2)',
+                    borderLeft: '3px solid var(--accent-danger, #dc2626)',
+                    borderRadius: 8,
+                    fontSize: '0.92rem',
+                  }}>
+                    {rejectReason.trim()}
+                  </blockquote>
+                  <p style={{ color: 'var(--ink-muted)', fontSize: '0.88rem' }}>
+                    <AlertTriangle size={14} style={{ verticalAlign: '-2px', marginRight: 4 }} />
+                    They are locked out immediately. When they open the app and tap <strong>Continue</strong>,
+                    the account and all its data are permanently deleted. If they never open the app, it is
+                    auto-deleted after 30 days. This cannot be undone after they acknowledge.
+                  </p>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+                    <button className="control" onClick={() => setRejectStep('input')} disabled={isRejectProcessing}>
+                      Back
+                    </button>
+                    <button
+                      className="control"
+                      onClick={confirmReject}
+                      disabled={isRejectProcessing}
+                      style={{
+                        background: 'var(--accent-danger, #dc2626)',
+                        color: 'white',
+                        borderColor: 'var(--accent-danger, #dc2626)',
+                      }}
+                    >
+                      {isRejectProcessing ? 'Rejecting…' : 'Confirm rejection'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {banTarget && (
         <div className="modalOverlay" onClick={() => !isBanProcessing && setBanTarget(null)}>
@@ -515,6 +809,17 @@ export default function UsersPage() {
                         <span>Banned {formatDate(selectedCouple.bannedAt)}{selectedCouple.banReason ? ` — ${selectedCouple.banReason}` : ''}</span>
                       </div>
                     )}
+                    <div className="metaRow">
+                      {(selectedCouple.verificationStatus ?? 'verified') === 'verified' && (
+                        <><BadgeCheck size={14} /> <span>Verified couple{selectedCouple.verifiedAt ? ` — since ${formatDate(selectedCouple.verifiedAt)}` : ''}</span></>
+                      )}
+                      {selectedCouple.verificationStatus === 'pending' && (
+                        <><AlertTriangle size={14} /> <span>Pending admin approval — shows as &quot;Unverified&quot; in the app</span></>
+                      )}
+                      {selectedCouple.verificationStatus === 'rejected' && (
+                        <><XCircle size={14} /> <span style={{ color: '#fecaca' }}>Rejected {selectedCouple.rejectedAt ? formatDate(selectedCouple.rejectedAt) : ''}{selectedCouple.rejectionReason ? ` — “${selectedCouple.rejectionReason}”` : ''} · deletes on user acknowledgment</span></>
+                      )}
+                    </div>
                     <div className="partnersBadgeRow" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '4px', marginTop: '6px' }}>
                       {selectedCouple.partners?.map(p => {
                         const isActive = p.lastActiveAt

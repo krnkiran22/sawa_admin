@@ -77,6 +77,9 @@ interface AdminContextType {
   deleteCouple: (id: string) => Promise<void>;
   banCouple: (id: string, reason?: string) => Promise<void>;
   unbanCouple: (id: string) => Promise<void>;
+  approveCouple: (id: string) => Promise<void>;
+  requestCoupleChanges: (id: string, note: string) => Promise<void>;
+  rejectCouple: (id: string, reason: string) => Promise<void>;
   deleteCommunity: (id: string) => Promise<void>;
   addCommunity: (data: AddCommunityInput) => Promise<void>;
   updateCommunity: (id: string, data: UpdateCommunityInput) => Promise<void>;
@@ -431,6 +434,73 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const approveCouple = async (id: string) => {
+    if (!token) return;
+    const now = new Date().toISOString();
+    setCouples((prev) =>
+      prev.map((c) =>
+        c.id === id
+          ? { ...c, verificationStatus: "verified" as const, verifiedAt: now, rejectionReason: null, rejectedAt: null }
+          : c
+      )
+    );
+    try {
+      const res = await fetch(`${API_URL}/couples/${id}/approve`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) toast("Couple approved — now Verified. They've been notified.", "success");
+      else { silentRefresh(token); toast("Failed to approve couple.", "error"); }
+    } catch (err) {
+      console.error("Approve Couple Error:", err);
+      silentRefresh(token);
+      toast("Failed to approve couple.", "error");
+    }
+  };
+
+  const requestCoupleChanges = async (id: string, note: string) => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_URL}/couples/${id}/request-changes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ note }),
+      });
+      if (res.ok) toast("Note sent — the couple stays pending until you approve them.", "success");
+      else { silentRefresh(token); toast("Failed to send the note.", "error"); }
+    } catch (err) {
+      console.error("Request Changes Error:", err);
+      silentRefresh(token);
+      toast("Failed to send the note.", "error");
+    }
+  };
+
+  const rejectCouple = async (id: string, reason: string) => {
+    if (!token) return;
+    const now = new Date().toISOString();
+    setCouples((prev) =>
+      prev.map((c) =>
+        c.id === id
+          ? { ...c, verificationStatus: "rejected" as const, rejectionReason: reason, rejectedAt: now }
+          : c
+      )
+    );
+    try {
+      const res = await fetch(`${API_URL}/couples/${id}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ reason }),
+      });
+      if (res.ok)
+        toast("Couple rejected. They'll see your note on next app open; the account deletes when they acknowledge it.", "success");
+      else { silentRefresh(token); toast("Failed to reject couple.", "error"); }
+    } catch (err) {
+      console.error("Reject Couple Error:", err);
+      silentRefresh(token);
+      toast("Failed to reject couple.", "error");
+    }
+  };
+
   const unbanCouple = async (id: string) => {
     if (!token) return;
     setCouples((prev) =>
@@ -637,6 +707,9 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
         deleteCouple,
         banCouple,
         unbanCouple,
+        approveCouple,
+        requestCoupleChanges,
+        rejectCouple,
         deleteCommunity,
         addCommunity,
         updateCommunity,

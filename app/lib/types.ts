@@ -44,6 +44,12 @@ export interface CoupleItem {
   relationshipStatus?: string | null;
   bannedAt?: string | null;
   banReason?: string | null;
+  /** Verification pipeline: pending (new signup) → verified, or rejected
+   *  (locked; deleted once the user acknowledges the rejection popup). */
+  verificationStatus?: 'pending' | 'verified' | 'rejected' | null;
+  rejectionReason?: string | null;
+  verifiedAt?: string | null;
+  rejectedAt?: string | null;
   partners?: Array<{
     id: string;
     name: string;
