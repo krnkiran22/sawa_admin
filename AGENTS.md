@@ -6,7 +6,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # Sawa Admin — Agent & Developer Guidelines
 
-> Last verified: 2026-08-19 against `main` `e5167fe` (Next.js 16.2, React 19.2,
+> Last verified: 2026-08-27 against `arfam-fix` (Next.js 16.3.1, React 19.2,
 > Tailwind 4). **Living document**: if your change makes a line here false,
 > update it in the same commit.
 
