@@ -38,8 +38,10 @@ export interface CoupleItem {
   id: string;
   pairName: string;
   city: string;
-  compatibilityScore: number;
-  streakDays: number;
+  // Real fields only — compatibilityScore/streakDays were server-side
+  // fabrications (Math.random / hardcoded 0) and are gone.
+  joinedAt?: string | null;
+  isProfileComplete?: boolean;
   status: 'new' | 'engaged' | 'inactive' | 'banned';
   relationshipStatus?: string | null;
   bannedAt?: string | null;

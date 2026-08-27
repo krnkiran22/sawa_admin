@@ -168,7 +168,7 @@ export default function UsersPage() {
                 <th>Partners</th>
                 <th>City</th>
                 <th>Relationship</th>
-                <th>Compatibility</th>
+                <th>Joined</th>
                 <th>Status</th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
@@ -226,7 +226,7 @@ export default function UsersPage() {
                       })}
                     </div>
                   </td>
-                  <td>{couple.city}</td>
+                  <td>{couple.city || <span style={{ color: 'var(--ink-muted)' }}>—</span>}</td>
                   <td>
                     {couple.relationshipStatus ? (
                       <span className="chip" style={{ borderColor: 'var(--accent-orange)', color: 'var(--accent-orange)' }}>
@@ -236,13 +236,8 @@ export default function UsersPage() {
                       <span style={{ color: 'var(--ink-muted)', fontSize: '0.8rem' }}>—</span>
                     )}
                   </td>
-                  <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <div style={{ width: '40px', height: '4px', background: '#eee', borderRadius: '2px' }}>
-                        <div style={{ width: `${couple.compatibilityScore}%`, height: '100%', background: 'var(--accent-good)', borderRadius: '2px' }} />
-                      </div>
-                      <span style={{ fontSize: '0.75rem' }}>{couple.compatibilityScore}%</span>
-                    </div>
+                  <td style={{ color: 'var(--ink-muted)', fontSize: '0.8rem' }}>
+                    {couple.joinedAt ? formatDate(couple.joinedAt) : '—'}
                   </td>
                   <td>{statusChip(couple.status)}</td>
                   <td style={{ textAlign: 'right' }}>
@@ -283,7 +278,7 @@ export default function UsersPage() {
                 >
                   <td style={{ fontWeight: 600, color: 'var(--accent-cool)' }}>{user.name}</td>
                   <td style={{ color: 'var(--ink-muted)' }}>{user.phone}</td>
-                  <td>{user.city}</td>
+                  <td>{user.city || <span style={{ color: 'var(--ink-muted)' }}>—</span>}</td>
                   <td>
                     {user.relationshipStatus ? (
                       <span className="chip" style={{ borderColor: 'var(--accent-orange)', color: 'var(--accent-orange)' }}>
@@ -426,7 +421,7 @@ export default function UsersPage() {
                  <div className="profileMeta">
                     <h2>{selectedUser.name}</h2>
                     <div className="metaRow">
-                      <MapPin size={14} /> <span>{selectedUser.city}</span>
+                      <MapPin size={14} /> <span>{selectedUser.city || '—'}</span>
                       <Phone size={14} style={{ marginLeft: '12px' }} /> <span>{selectedUser.phone}</span>
                     </div>
                     <div className="metaRow">
@@ -500,7 +495,7 @@ export default function UsersPage() {
                  <div className="profileMeta">
                     <h2>{selectedCouple.pairName}</h2>
                     <div className="metaRow">
-                      <MapPin size={14} /> <span>{selectedCouple.city}</span>
+                      <MapPin size={14} /> <span>{selectedCouple.city || '—'}</span>
                       <Users size={14} style={{ marginLeft: '12px' }} /> <span>{selectedCouple.partners?.length || 0} Partners</span>
                     </div>
                     {selectedCouple.relationshipStatus && (
@@ -558,15 +553,19 @@ export default function UsersPage() {
                  )}
 
                  <div className="profileSection">
-                    <div className="sectionLabel"><Target size={14} /> Compatibility</div>
+                    <div className="sectionLabel"><Target size={14} /> Profile</div>
                     <div className="profileCard" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                        <div>
-                          <p style={{ margin: 0, fontWeight: 600 }}>Active Relationship</p>
+                          <p style={{ margin: 0, fontWeight: 600 }}>
+                            {selectedCouple.isProfileComplete ? 'Onboarding complete' : 'Onboarding incomplete'}
+                          </p>
                           <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--ink-muted)' }}>Status: {selectedCouple.status}</p>
                        </div>
                        <div style={{ textAlign: 'right' }}>
-                          <p style={{ margin: 0, fontSize: '1.5rem', fontWeight: 800, color: 'var(--accent-good)' }}>{selectedCouple.compatibilityScore}%</p>
-                          <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--ink-muted)' }}>Match Score</p>
+                          <p style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700 }}>
+                            {selectedCouple.joinedAt ? formatDate(selectedCouple.joinedAt) : '—'}
+                          </p>
+                          <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--ink-muted)' }}>Joined</p>
                        </div>
                     </div>
                  </div>
